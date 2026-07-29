@@ -46,3 +46,33 @@ final_df = df[['clean_text', 'category']]
 final_df.to_csv('cleaned_twitter_data.csv', index=False)
 print(final_df.head())
 
+# Converting text into features (TF-IDF)
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+
+# 1. Load the cleaned dataset created by code.py
+df = pd.read_csv("cleaned_twitter_data.csv")
+
+# Handle any missing values in clean_text
+df["clean_text"] = df["clean_text"].fillna("")
+
+# 2. Extract features (X) and targets (y)
+X_raw = df["clean_text"]
+y = df["category"]
+
+# 3. Initialize TF-IDF Vectorizer
+# - max_features: limits vocabulary to top 5,000 words
+# - ngram_range=(1,2): includes unigrams ("good") and bigrams ("not good")
+tfidf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
+
+# 4. Transform text into numerical feature matrix
+X = tfidf.fit_transform(X_raw)
+
+print("TF-IDF Matrix Shape:", X.shape)
+# Output shape will be: (number_of_rows, 5000)
+
+# 5. Split into train and test sets for model training
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
