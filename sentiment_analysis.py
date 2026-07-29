@@ -76,3 +76,126 @@ print("TF-IDF Matrix Shape:", X.shape)
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
+
+# Training the model (Naive Bayes, Logistic Regression, LSTM)
+import numpy as np
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.preprocessing import LabelEncoder
+import tensorflow as tf
+from tensorflow.keras.layers import LSTM, Dense, Embedding, SpatialDropout1D
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.preprocessing.text import Tokenizer
+
+# 1. Load Data
+df = pd.read_csv("cleaned_twitter_data.csv")
+df["clean_text"] = df["clean_text"].fillna("")
+
+# Encode target categories to integers (0, 1, 2)
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(df["category"])
+
+# ==========================================
+# PART 1: TF-IDF Models (Naive Bayes & Logistic Regression)
+# ==========================================
+print("--- Training TF-IDF Models ---")
+
+tfidf = TfidfVectorizer(max_features=5000)
+X_tfidf = tfidf.fit_transform(df["clean_text"])
+
+# Train-Test Split for TF-IDF
+X_train_tf, X_test_tf, y_train, y_test = train_test_split(
+    X_tfidf, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+)
+
+# 1. Naive Bayes
+nb_model = MultinomialNB()
+nb_model.fit(X_train_tf, y_train)
+nb_preds = nb_model.predict(X_test_tf)
+
+print("\n[1] Naive Bayes Accuracy:", accuracy_score(y_test, nb_preds))
+print(
+    classification_report(
+        y_test, nb_preds, target_names=label_encoder.classes_
+    )
+)
+
+# 2. Logistic Regression
+lr_model = LogisticRegression(max_iter=1000)
+lr_model.fit(X_train_tf, y_train)
+lr_preds = lr_model.predict(X_test_tf)
+
+print("\n[2] Logistic Regression Accuracy:", accuracy_score(y_test, lr_preds))
+print(
+    classification_report(
+        y_test, lr_preds, target_names=label_encoder.classes_
+    )
+)
+
+# ==========================================
+# PART 2: Sequential Deep Learning Model (LSTM)
+# ==========================================
+print("\n--- Training LSTM Model ---")
+
+MAX_NUM_WORDS = 5000
+MAX_SEQUENCE_LENGTH = 100
+
+# Tokenize text into sequences for deep learning
+tokenizer = Tokenizer(num_words=MAX_NUM_WORDS)
+tokenizer.fit_on_texts(df["clean_text"])
+sequences = tokenizer.texts_to_sequences(df["clean_text"])
+X_lstm = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
+
+# Train-Test Split for LSTM
+X_train_lstm, X_test_lstm, y_train_lstm, y_test_lstm = train_test_split(
+    X_lstm, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+)
+
+# Convert labels to one-hot encoding for multi-class classification
+num_classes = len(label_encoder.classes_)
+y_train_cat = tf.keras.utils.to_categorical(y_train_lstm, num_classes)
+y_test_cat = tf.keras.utils.to_categorical(y_test_lstm, num_classes)
+
+# Define LSTM Architecture
+embedding_dim = 128
+
+lstm_model = Sequential(
+    [
+        Embedding(
+            input_dim=MAX_NUM_WORDS,
+            output_dim=embedding_dim,
+            input_length=MAX_SEQUENCE_LENGTH,
+        ),
+        SpatialDropout1D(0.2),
+        LSTM(units=100, dropout=0.2, recurrent_dropout=0.2),
+        Dense(units=num_classes, activation="softmax"),
+    ]
+)
+
+lstm_model.compile(
+    loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"]
+)
+
+# Train the LSTM
+history = lstm_model.fit(
+    X_train_lstm,
+    y_train_cat,
+    epochs=5,
+    batch_size=32,
+    validation_data=(X_test_lstm, y_test_cat),
+    verbose=1,
+)
+
+# Evaluate LSTM
+lstm_preds = np.argmax(lstm_model.predict(X_test_lstm), axis=1)
+print("\n[3] LSTM Accuracy:", accuracy_score(y_test_lstm, lstm_preds))
+print(
+    classification_report(
+        y_test_lstm, lstm_preds, target_names=label_encoder.classes_
+    )
+)
