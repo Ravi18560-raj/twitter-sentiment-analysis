@@ -1,16 +1,6 @@
-"""
-Patched sentiment_analysis.py
-- Consolidated imports and removed duplicates
-- Robust NLTK resource checks/downloads
-- Fixed variable bugs (nb_acc/lr_acc order)
-- Consolidated TF-IDF creation and use
-- Wrapped logic in functions and `if __name__ == '__main__'` guard
-- Better error handling and informative prints
-- Save model accuracies JSON and duplicate plot filenames expected by the Streamlit app
-- Set tokenizer OOV token for safer LSTM inference on unseen words
-- Added configurable LSTM training (epochs, batch_size) and EarlyStopping + ModelCheckpoint callbacks
-"""
-
+==================================
+# Importing necessary Libraries
+==================================
 import os
 import re
 import sys
@@ -57,7 +47,9 @@ def ensure_nltk_resources():
     except LookupError:
         logging.info("Downloading stopwords...")
         nltk.download("stopwords", quiet=True)
-
+# ============================
+# Data Preprocessing
+# ============================
 
 def preprocess_text(text: str) -> str:
     """Lowercase, remove URLs/mentions/hashtags/numbers/punctuation, tokenize, and remove stopwords."""
@@ -112,6 +104,9 @@ def load_and_preprocess(csv_path: str) -> pd.DataFrame:
 
     return df[["clean_text", "category"]]
 
+# =======================================
+# Model Training and evaluation
+# =======================================
 
 def train_and_evaluate(
     df: pd.DataFrame,
@@ -257,6 +252,9 @@ def train_and_evaluate(
         "tokenizer": tokenizer,
     }
 
+# ===========================================================
+# Visualizations (accuracy, loss curves, confusion matrix)
+# ===========================================================
 
 def plot_results(nb_acc, lr_acc, lstm_acc, history, class_names, y_test_tf, nb_preds, lr_preds, y_test_lstm, lstm_preds):
     sns.set_theme(style="whitegrid")
