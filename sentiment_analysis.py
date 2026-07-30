@@ -6,12 +6,15 @@ Patched sentiment_analysis.py
 - Consolidated TF-IDF creation and use
 - Wrapped logic in functions and `if __name__ == '__main__'` guard
 - Better error handling and informative prints
+- Save model accuracies JSON and duplicate plot filenames expected by the Streamlit app
+- Set tokenizer OOV token for safer LSTM inference on unseen words
 """
 
 import os
 import re
 import sys
 import logging
+import json
 
 import pandas as pd
 import numpy as np
@@ -70,7 +73,11 @@ def preprocess_text(text: str) -> str:
     text = text.strip()
 
     # Tokenize
-    tokens = word_tokenize(text)
+    try:
+        tokens = word_tokenize(text)
+    except LookupError:
+        # Fallback: simple split if tokenizer resource missing
+        tokens = text.split()
 
     # Remove stopwords
     try:
@@ -137,7 +144,8 @@ def train_and_evaluate(df: pd.DataFrame, random_state: int = 42):
     MAX_NUM_WORDS = 5000
     MAX_SEQUENCE_LENGTH = 100
 
-    tokenizer = Tokenizer(num_words=MAX_NUM_WORDS, oov_token=None)
+    # Use an OOV token so unseen words during inference are handled
+    tokenizer = Tokenizer(num_words=MAX_NUM_WORDS, oov_token="<OOV>")
     tokenizer.fit_on_texts(df["clean_text"])
     sequences = tokenizer.texts_to_sequences(df["clean_text"])
     X_lstm = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
@@ -179,7 +187,7 @@ def train_and_evaluate(df: pd.DataFrame, random_state: int = 42):
     lstm_acc = accuracy_score(y_test_lstm, lstm_preds)
     logging.info("LSTM accuracy: %.4f", lstm_acc)
 
-    # Plot results
+    # Plot results (also save images under names expected by the Streamlit app)
     plot_results(nb_acc, lr_acc, lstm_acc, history, class_names, y_test_tf, nb_preds, lr_preds, y_test_lstm, lstm_preds)
 
     # Save models and artifacts
@@ -192,6 +200,19 @@ def train_and_evaluate(df: pd.DataFrame, random_state: int = 42):
 
     # Save Keras model
     lstm_model.save("lstm_model.keras")
+
+    # Save accuracies in a JSON file expected by the Streamlit app
+    accuracy_json = {
+        "Naive Bayes": round(nb_acc * 100, 2),
+        "Logistic Regression": round(lr_acc * 100, 2),
+        "LSTM": round(lstm_acc * 100, 2),
+    }
+    try:
+        with open("model_accuracies.json", "w") as fj:
+            json.dump(accuracy_json, fj)
+        logging.info("Saved model_accuracies.json with values: %s", accuracy_json)
+    except Exception as e:
+        logging.warning("Unable to write model_accuracies.json: %s", e)
 
     logging.info("All models and vectorizers saved successfully!")
 
@@ -231,6 +252,8 @@ def plot_results(nb_acc, lr_acc, lstm_acc, history, class_names, y_test_tf, nb_p
 
     plt.tight_layout()
     plt.savefig("model_accuracy_comparison.png")
+    # duplicate under name expected by the Streamlit app
+    plt.savefig("accuracy_comparison.png")
     plt.close()
 
     # Chart 2: LSTM Training & Validation Curves
@@ -251,6 +274,8 @@ def plot_results(nb_acc, lr_acc, lstm_acc, history, class_names, y_test_tf, nb_p
 
     plt.tight_layout()
     plt.savefig("lstm_training_curves.png")
+    # duplicate under name expected by the Streamlit app
+    plt.savefig("lstm_curves.png")
     plt.close()
 
     # Chart 3: Confusion Matrices
