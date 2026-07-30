@@ -8,6 +8,7 @@ Patched sentiment_analysis.py
 - Better error handling and informative prints
 - Save model accuracies JSON and duplicate plot filenames expected by the Streamlit app
 - Set tokenizer OOV token for safer LSTM inference on unseen words
+- Added configurable LSTM training (epochs, batch_size) and EarlyStopping + ModelCheckpoint callbacks
 """
 
 import os
@@ -38,6 +39,7 @@ from tensorflow.keras.layers import LSTM, Dense, Embedding, SpatialDropout1D
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -111,7 +113,23 @@ def load_and_preprocess(csv_path: str) -> pd.DataFrame:
     return df[["clean_text", "category"]]
 
 
-def train_and_evaluate(df: pd.DataFrame, random_state: int = 42):
+def train_and_evaluate(
+    df: pd.DataFrame,
+    random_state: int = 42,
+    lstm_epochs: int = 10,
+    lstm_batch_size: int = 32,
+    early_stop_patience: int = 2,
+):
+    """Train classical models and an LSTM. LSTM training is configurable and uses EarlyStopping + ModelCheckpoint.
+
+    Args:
+        df: DataFrame with 'clean_text' and 'category'
+        random_state: random seed for splits
+        lstm_epochs: number of epochs to train LSTM
+        lstm_batch_size: batch size for LSTM training
+        early_stop_patience: patience for early stopping on validation loss
+    """
+
     # Encode labels
     label_encoder = LabelEncoder()
     y_encoded = label_encoder.fit_transform(df["category"])
@@ -170,16 +188,30 @@ def train_and_evaluate(df: pd.DataFrame, random_state: int = 42):
 
     lstm_model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
 
-    # Train LSTM (keep epochs small by default; caller may increase)
-    logging.info("Training LSTM model...")
+    # Callbacks: EarlyStopping and ModelCheckpoint
+    callbacks = [
+        EarlyStopping(monitor="val_loss", patience=early_stop_patience, restore_best_weights=True),
+        ModelCheckpoint("best_lstm_model.keras", monitor="val_loss", save_best_only=True),
+    ]
+
+    logging.info("Training LSTM model for %d epochs (batch_size=%d)...", lstm_epochs, lstm_batch_size)
     history = lstm_model.fit(
         X_train_lstm,
         y_train_cat,
-        epochs=5,
-        batch_size=32,
+        epochs=lstm_epochs,
+        batch_size=lstm_batch_size,
         validation_data=(X_test_lstm, y_test_cat),
+        callbacks=callbacks,
         verbose=1,
     )
+
+    # If ModelCheckpoint saved a best model, prefer loading it for evaluation
+    if os.path.exists("best_lstm_model.keras"):
+        try:
+            lstm_model = tf.keras.models.load_model("best_lstm_model.keras")
+            logging.info("Loaded best LSTM model from best_lstm_model.keras for evaluation.")
+        except Exception as e:
+            logging.warning("Failed to load best_lstm_model.keras, using in-memory model: %s", e)
 
     # Evaluate LSTM
     lstm_probs = lstm_model.predict(X_test_lstm)
@@ -198,7 +230,7 @@ def train_and_evaluate(df: pd.DataFrame, random_state: int = 42):
     joblib.dump(nb_model, "naive_bayes.pkl")
     joblib.dump(lr_model, "logistic_regression.pkl")
 
-    # Save Keras model
+    # Save Keras model (best model will be saved here)
     lstm_model.save("lstm_model.keras")
 
     # Save accuracies in a JSON file expected by the Streamlit app
@@ -344,5 +376,10 @@ if __name__ == "__main__":
     cleaned_df.to_csv("cleaned_twitter_data.csv", index=False)
     logging.info("Saved cleaned data to cleaned_twitter_data.csv")
 
-    results = train_and_evaluate(cleaned_df)
+    # Allow configuring LSTM training via environment variables
+    lstm_epochs = int(os.getenv("LSTM_EPOCHS", "10"))
+    lstm_batch_size = int(os.getenv("LSTM_BATCH_SIZE", "32"))
+    early_stop_patience = int(os.getenv("EARLY_STOP_PATIENCE", "2"))
+
+    results = train_and_evaluate(cleaned_df, lstm_epochs=lstm_epochs, lstm_batch_size=lstm_batch_size, early_stop_patience=early_stop_patience)
     logging.info("Done. Results summary: %s", {k: v for k, v in results.items() if isinstance(v, (int, float, str))})
