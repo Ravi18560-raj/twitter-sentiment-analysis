@@ -176,7 +176,7 @@ def train_and_evaluate(
         [
             Embedding(input_dim=MAX_NUM_WORDS, output_dim=128, input_length=MAX_SEQUENCE_LENGTH),
             SpatialDropout1D(0.2),
-            LSTM(units=100, dropout=0.2),
+            LSTM(units=100, dropout=0.2, recurrent_dropout=0.2),
             Dense(units=num_classes, activation="softmax"),
         ]
     )
